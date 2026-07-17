@@ -18,7 +18,7 @@ consultas = [
         "timeout": 300,
     },
     {
-        "id": "079653",
+        "id": "079652",
         "parametros": [2026, 7],
         "timeout": 300,
     },
@@ -36,12 +36,12 @@ dfs = {
 }
 
 df_079651 = dfs["079651"]
-df_079653 = dfs["079653"]
+df_079652 = dfs["079652"]
 
 print("Consulta 079651:")
 print(df_079651.head())
 print(f"Total: {len(df_079651)}")
 
-print("\nConsulta 079653:")
-print(df_079653.head())
-print(f"Total: {len(df_079653)}")
+print("\nConsulta 079652:")
+print(df_079652.head())
+print(f"Total: {len(df_079652)}")
