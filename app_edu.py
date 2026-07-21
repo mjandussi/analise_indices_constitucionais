@@ -7,7 +7,8 @@ Este arquivo foi escrito para ser lido de cima para baixo e executado sozinho:
 3. recompõe a base constitucional de receitas (Parte 1);
 4. calcula a aplicação em educação e os redutores A, B, C e D (Parte 2);
 5. transforma os resultados em métricas;
-6. apresenta o dashboard e a memória de cálculo no Streamlit.
+6. projeta cenários gerenciais para o encerramento do exercício; e
+7. apresenta o dashboard e a memória de cálculo no Streamlit.
 
 Não existe leitura de CSV nem troca automática de fonte. Em produção, todos os
 valores exibidos por este app vêm das consultas 084835 e 084837.
@@ -20,8 +21,8 @@ GUIA DE LEITURA
 * A seção 5 produz o dicionário ``parte2`` com positivos, A–D, outras
   deduções e o total aplicado em cada estágio.
 * A seção 6 combina ``parte1`` e ``parte2`` e produz as métricas decisórias.
-* As seções 7 e 8 somente formatam e exibem o resultado; elas não criam uma
-  nova regra financeira.
+* A seção 7 contém apenas a projeção gerencial, isolada do cálculo atual.
+* As seções seguintes formatam e exibem os resultados.
 
 CONVENÇÕES IMPORTANTES
 ----------------------
@@ -75,12 +76,15 @@ CONSULTA_RECEITAS = "084835"
 CONSULTA_DESPESAS = "084837"
 
 # Alterar esta versão invalida um resultado antigo guardado na sessão.
-VERSAO_CALCULO = "app-edu-v1-084835-084837"
+VERSAO_CALCULO = "app-edu-v4-084835-084837-fundeb-fallback"
 
 META_CONSTITUCIONAL = Decimal("25")
 ALIQUOTA_MINIMA = Decimal("0.25")
 ZERO = Decimal("0")
 CENTAVO = Decimal("0.01")
+
+# Valor inicial sugerido para o acréscimo percentual simplificado.
+REAJUSTE_TOTAL_2026 = Decimal("0.1156")
 
 # META_CONSTITUCIONAL está na escala percentual (25); ALIQUOTA_MINIMA está na
 # escala de multiplicação (0,25). Manter as duas evita conversões implícitas.
@@ -624,6 +628,7 @@ def calcular_parte1(payload: Any) -> dict[str, Any]:
     componentes: list[dict[str, Any]] = []
     total_informado: Mapping[str, Any] | None = None
     minimo_informado: Mapping[str, Any] | None = None
+    fundeb_informado: Mapping[str, Any] | None = None
 
     # Regra financeira: somente linhas assinadas com (+) ou (-) formam a base.
     # TOTAL, mínimo e separadores são guardados/ignorados para que nunca sejam
@@ -642,6 +647,9 @@ def calcular_parte1(payload: Any) -> dict[str, Any]:
             continue
         if "VALOR A SER APLICADO EM EDUCACAO" in chave:
             minimo_informado = registro
+            continue
+        if "TOTAL DESTINADO AO FUNDEB" in chave:
+            fundeb_informado = registro
             continue
         if not (chave.startswith("(+)") or chave.startswith("(-)")):
             continue
@@ -722,6 +730,20 @@ def calcular_parte1(payload: Any) -> dict[str, Any]:
             "mínimo sobre a receita arrecadada",
         )
 
+    fundeb_previsto: Decimal | None = None
+    fundeb_realizado: Decimal | None = None
+    if fundeb_informado is not None:
+        fundeb_previsto = ler_valor(
+            fundeb_informado, coluna_prevista, -1, "TOTAL DESTINADO AO FUNDEB"
+        )
+        fundeb_realizado = ler_valor(
+            fundeb_informado, coluna_arrecadada, -1, "TOTAL DESTINADO AO FUNDEB"
+        )
+        if fundeb_previsto < ZERO or fundeb_realizado < ZERO:
+            raise ErroDadosEducacao(
+                "O total destinado ao FUNDEB da Parte 1 não pode ser negativo."
+            )
+
     return {
         "componentes": componentes,
         "base_prevista": base_prevista,
@@ -730,6 +752,8 @@ def calcular_parte1(payload: Any) -> dict[str, Any]:
         "realizacao_percentual": realizacao,
         "minimo_previsto": minimo_previsto,
         "minimo_arrecadado": minimo_arrecadado,
+        "fundeb_previsto": fundeb_previsto,
+        "fundeb_realizado": fundeb_realizado,
         "avisos": avisos,
     }
 
@@ -795,93 +819,30 @@ def preparar_linhas_parte2(payload: Any) -> list[dict[str, Any]]:
 def resolver_total_transferido_fundeb(
     linhas: Sequence[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
-    """Obtém a linha positiva do FUNDEB, inclusive pelo nó bruto -FILTRO.
+    """Localiza e inverte a linha fixa ``...FUNDEB-FILTRO`` da consulta 084837."""
 
-    A consulta atual entrega ``...FUNDEB-FILTRO`` com valores negativos. A antiga
-    expressão do Flexvision era ``0 - FILTRO``; por isso o mesmo cálculo é feito
-    explicitamente aqui. O nó bruto é retirado antes das somas para não duplicar.
-
-    Casos aceitos:
-
-    * linha positiva direta: usa a linha direta;
-    * somente FUNDEB-FILTRO: cria uma linha positiva por ``0 - filtro``;
-    * ambos: confere que são iguais e usa uma única linha;
-    * nenhum: interrompe, pois a aplicação ficaria subestimada.
-
-    A linha direta é um dado positivo comum e preferencial. O filtro é apenas a
-    alternativa técnica necessária quando a antiga expressão não chega no JSON.
-    """
-
-    linha_direta = linha_unica(
-        linhas,
-        lambda chave: (
-            "TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB" in chave
-            and "FILTRO" not in chave
-        ),
-        "total direto das receitas transferidas ao FUNDEB",
-        obrigatoria=False,
-    )
-    linha_filtro = linha_unica(
-        linhas,
-        lambda chave: "FUNDEB" in chave and "FILTRO" in chave,
-        "insumo FUNDEB-FILTRO",
-        obrigatoria=False,
-    )
-
-    if linha_direta is None and linha_filtro is None:
+    nome_filtro = "(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB-FILTRO"
+    linha_filtro = next((linha for linha in linhas if linha["chave"] == nome_filtro), None)
+    if linha_filtro is None:
         raise ErroDadosEducacao(
-            "A Parte 2 não trouxe o total positivo do FUNDEB nem o nó FUNDEB-FILTRO."
+            "A consulta 084837 deve conter a linha "
+            "(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB-FILTRO."
         )
 
-    sintetica: dict[str, Any] | None = None
-    if linha_filtro is not None:
-        positivos = [
-            ESTAGIOS[estagio]
-            for estagio, valor in linha_filtro["valores"].items()
-            if valor > ZERO
-        ]
-        if positivos:
-            raise ErroDadosEducacao(
-                "O nó FUNDEB-FILTRO deve chegar negativo ou zerado, pois a fórmula é "
-                f"0 - FILTRO. Valores positivos em: {', '.join(positivos)}."
-            )
-        sintetica = {
-            "indice": linha_filtro["indice"],
-            "descricao": "(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB",
-            "chave": "(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB",
-            "valores": {
-                estagio: moeda(ZERO - linha_filtro["valores"][estagio])
-                for estagio in ESTAGIOS
-            },
-        }
-
-    if linha_direta is not None:
-        if not linha_direta["chave"].startswith("(+)"):
-            raise ErroDadosEducacao(
-                "O total direto do FUNDEB precisa estar identificado com (+)."
-            )
-        validar_nao_negativas((linha_direta,), "total transferido ao FUNDEB")
-        if sintetica is not None:
-            for estagio in ESTAGIOS:
-                comparar_centavos(
-                    linha_direta["valores"][estagio],
-                    sintetica["valores"][estagio],
-                    f"total do FUNDEB em {ESTAGIOS[estagio]}",
-                )
-        total_escolhido = linha_direta
-        origem = "linha positiva direta da consulta"
-    else:
-        assert sintetica is not None
-        total_escolhido = sintetica
-        origem = "0 - valor do nó FUNDEB-FILTRO"
-
-    # Regra contra dupla contagem: o filtro nunca participa diretamente da soma.
-    # Se só ele veio, inserimos exatamente uma linha positiva sintética. Assim,
-    # o mesmo montante não é somado como filtro e como total reconstruído.
-    linhas_calculo = [linha for linha in linhas if linha is not linha_filtro]
-    if linha_direta is None:
-        linhas_calculo.append(total_escolhido)
-    return linhas_calculo, total_escolhido, origem
+    total_fundeb = {
+        **linha_filtro,
+        "descricao": "(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB",
+        "chave": "(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB",
+        "valores": {
+            estagio: moeda(ZERO - linha_filtro["valores"][estagio])
+            for estagio in ESTAGIOS
+        },
+    }
+    linhas_calculo = [
+        total_fundeb if linha is linha_filtro else linha
+        for linha in linhas
+    ]
+    return linhas_calculo, total_fundeb, "0 - linha FUNDEB-FILTRO"
 
 
 def grupo_superavit(chave: str) -> str | None:
@@ -1312,7 +1273,200 @@ def calcular_todos_os_indices(
 
 
 # =============================================================================
-# 7. TABELAS E GRÁFICOS — SOMENTE APRESENTAÇÃO, SEM NOVAS REGRAS FINANCEIRAS
+# 7. PROJEÇÃO GERENCIAL PARA O ENCERRAMENTO DO EXERCÍCIO
+# =============================================================================
+
+HISTORICO_OFICIAL_INDICE = (
+    {"ano": 2022, "indice": Decimal("25.70")},
+    {"ano": 2023, "indice": Decimal("26.40")},
+    {"ano": 2024, "indice": Decimal("26.94")},
+    {"ano": 2025, "indice": Decimal("26.87")},
+)
+
+NOMES_MESES = (
+    "Janeiro",
+    "Fevereiro",
+    "Março",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+)
+
+
+def calcular_monitor_meta(
+    parte1: Mapping[str, Any],
+    parte2: Mapping[str, Any],
+    periodo: int,
+    *,
+    base_anual_estimada: Decimal,
+    meta_percentual: Decimal,
+    percentual_reajuste: Decimal = ZERO,
+    mes_inicio_reajuste: int | None = None,
+) -> dict[str, Any]:
+    """Projeta MDE/impostos e FUNDEB pelo ritmo médio mensal observado."""
+
+    if periodo not in range(1, 13):
+        raise ErroDadosEducacao(f"Período inválido no monitor: {periodo}.")
+    if base_anual_estimada <= ZERO:
+        raise ErroDadosEducacao("A base anual estimada deve ser maior que zero.")
+    if meta_percentual < META_CONSTITUCIONAL:
+        raise ErroDadosEducacao("A meta gerencial não pode ser inferior a 25%.")
+    if percentual_reajuste < ZERO or percentual_reajuste > Decimal("100"):
+        raise ErroDadosEducacao("O percentual de reajuste deve estar entre 0% e 100%.")
+    if mes_inicio_reajuste is not None and mes_inicio_reajuste not in range(1, 13):
+        raise ErroDadosEducacao("O mês inicial do reajuste deve estar entre 1 e 12.")
+
+    valor_meta = (
+        base_anual_estimada * meta_percentual / Decimal("100")
+    ).quantize(CENTAVO, rounding=ROUND_CEILING)
+    liquidado_atual = parte2["total_aplicado"]["despesa_liquidada"]
+    fundeb_parte2 = parte2["total_fundeb"]["valores"]["despesa_liquidada"]
+    fundeb_parte1 = parte1.get("fundeb_realizado")
+    fundeb_previsto = parte1.get("fundeb_previsto")
+    if fundeb_parte1 is not None:
+        comparar_centavos(
+            fundeb_parte1,
+            fundeb_parte2,
+            "FUNDEB realizado da Parte 1 versus transferido da Parte 2",
+        )
+        fundeb_atual = fundeb_parte1
+        origem_fundeb = "Parte 1, reconciliada com a Parte 2"
+    else:
+        fundeb_atual = fundeb_parte2
+        origem_fundeb = "Parte 2 (linha FUNDEB-FILTRO)"
+
+    # Esta decomposição reproduz a linha 19 do RREO: fontes positivas, sem a
+    # transferência ao FUNDEB e depois das deduções ordinárias da consulta.
+    mde_impostos_atual = moeda(
+        parte2["valores_positivos"]["despesa_liquidada"]
+        - fundeb_parte2
+        - parte2["outras_deducoes"]["despesa_liquidada"]
+    )
+    if mde_impostos_atual < ZERO:
+        raise ErroDadosEducacao("A MDE com recursos de impostos ficou negativa.")
+    redutores_abcd_atual = moeda(
+        sum(
+            (
+                parte2[chave]["despesa_liquidada"]
+                for chave in ("redutor_a", "redutor_b", "redutor_c", "redutor_d")
+            ),
+            ZERO,
+        )
+    )
+    comparar_centavos(
+        moeda(mde_impostos_atual + fundeb_atual - redutores_abcd_atual),
+        liquidado_atual,
+        "decomposição da aplicação liquidada em MDE, FUNDEB e redutores A–D",
+    )
+
+    meses_restantes = 12 - periodo
+    media_mensal_mde_exata = mde_impostos_atual / Decimal(periodo)
+    media_mensal_mde = moeda(media_mensal_mde_exata)
+    mde_futura_estimada = moeda(media_mensal_mde_exata * Decimal(meses_restantes))
+    if fundeb_previsto is not None:
+        # Quando disponível, prevalece o valor anual calculado pela Parte 1
+        # sobre a previsão atualizada das receitas que compõem os 20%.
+        fundeb_anual_projetado = max(fundeb_previsto, fundeb_atual)
+        origem_projecao_fundeb = "Previsão anual da Parte 1"
+        fundeb_estimado_por_media = False
+    else:
+        # A consulta compacta atualmente usada pelo app pode não trazer essa
+        # linha. Nesse caso, prolongamos apenas o FUNDEB pelo ritmo realizado.
+        fundeb_anual_projetado = moeda(
+            fundeb_atual / Decimal(periodo) * Decimal("12")
+        )
+        origem_projecao_fundeb = "Média mensal do FUNDEB realizado"
+        fundeb_estimado_por_media = True
+    saldo_fundeb_ate_dezembro = moeda(fundeb_anual_projetado - fundeb_atual)
+
+    primeiro_mes_futuro = periodo + 1
+    inicio_efetivo_reajuste = max(
+        primeiro_mes_futuro,
+        mes_inicio_reajuste if mes_inicio_reajuste is not None else primeiro_mes_futuro,
+    )
+    meses_com_reajuste = (
+        max(13 - inicio_efetivo_reajuste, 0)
+        if percentual_reajuste > ZERO and meses_restantes > 0
+        else 0
+    )
+    base_automatica_reajuste = moeda(
+        media_mensal_mde_exata * Decimal(meses_com_reajuste)
+    )
+    acrescimo_reajuste = moeda(
+        base_automatica_reajuste * percentual_reajuste / Decimal("100")
+    )
+
+    projecao_sem_reajuste = moeda(
+        liquidado_atual + mde_futura_estimada + saldo_fundeb_ate_dezembro
+    )
+    aplicacao_projetada = moeda(projecao_sem_reajuste + acrescimo_reajuste)
+    valor_a_aplicar = max(moeda(valor_meta - liquidado_atual), ZERO)
+    necessidade_apos_projecao = max(moeda(valor_meta - aplicacao_projetada), ZERO)
+    margem_projetada = moeda(aplicacao_projetada - valor_meta)
+    media_mensal_necessaria = (
+        (valor_a_aplicar / Decimal(meses_restantes)).quantize(
+            CENTAVO, rounding=ROUND_CEILING
+        )
+        if meses_restantes
+        else valor_a_aplicar
+    )
+
+    minimo_constitucional = moeda(
+        base_anual_estimada * META_CONSTITUCIONAL / Decimal("100")
+    )
+    if aplicacao_projetada >= valor_meta:
+        situacao = "Confortável"
+        explicacao = "O ritmo médio projetado alcança a meta escolhida."
+    elif aplicacao_projetada >= minimo_constitucional:
+        situacao = "Atenção"
+        explicacao = "O mínimo de 25% é alcançado, mas a meta gerencial não."
+    else:
+        situacao = "Risco"
+        explicacao = "O ritmo médio projetado não alcança o mínimo de 25%."
+
+    return {
+        "base_anual_estimada": base_anual_estimada,
+        "meta_percentual": meta_percentual,
+        "valor_meta": valor_meta,
+        "liquidado_atual": liquidado_atual,
+        "mde_impostos_atual": mde_impostos_atual,
+        "redutores_abcd_atual": redutores_abcd_atual,
+        "media_mensal_mde": media_mensal_mde,
+        "mde_futura_estimada": mde_futura_estimada,
+        "fundeb_atual": fundeb_atual,
+        "fundeb_previsto_parte1": fundeb_previsto,
+        "origem_fundeb": origem_fundeb,
+        "origem_projecao_fundeb": origem_projecao_fundeb,
+        "fundeb_estimado_por_media": fundeb_estimado_por_media,
+        "fundeb_anual_projetado": fundeb_anual_projetado,
+        "saldo_fundeb_ate_dezembro": saldo_fundeb_ate_dezembro,
+        "percentual_reajuste": percentual_reajuste,
+        "mes_inicio_reajuste": mes_inicio_reajuste,
+        "meses_com_reajuste": meses_com_reajuste,
+        "base_automatica_reajuste": base_automatica_reajuste,
+        "acrescimo_reajuste": acrescimo_reajuste,
+        "projecao_sem_reajuste": projecao_sem_reajuste,
+        "aplicacao_projetada": aplicacao_projetada,
+        "valor_a_aplicar": valor_a_aplicar,
+        "necessidade_apos_projecao": necessidade_apos_projecao,
+        "margem_projetada": margem_projetada,
+        "meses_restantes": meses_restantes,
+        "media_mensal_necessaria": media_mensal_necessaria,
+        "indice_projetado": percentual(aplicacao_projetada, base_anual_estimada),
+        "situacao": situacao,
+        "explicacao": explicacao,
+        "base_arrecadada_atual": parte1["base_arrecadada"],
+    }
+
+
+# =============================================================================
+# 8. TABELAS E GRÁFICOS — APRESENTAÇÃO
 # =============================================================================
 
 def linha_financeira(rotulo: str, valores: Mapping[str, Decimal]) -> dict[str, str]:
@@ -2111,6 +2265,277 @@ def renderizar_memoria(
             st.dataframe(pd.DataFrame(linhas_brutas), hide_index=True, width="stretch")
 
 
+def renderizar_projecao(
+    parte1: dict[str, Any],
+    parte2: dict[str, Any],
+    exercicio: int,
+    periodo: int,
+) -> None:
+    """Exibe um monitor indicativo, separado do cálculo oficial atual."""
+
+    st.divider()
+    with st.container(border=True):
+        coluna_texto, coluna_acao = st.columns([3, 1.2], vertical_alignment="center")
+        with coluna_texto:
+            st.subheader("Monitor indicativo da meta anual", anchor=False)
+            st.caption(
+                "O acompanhamento oficial termina acima. Ative esta área para ver "
+                "quanto ainda precisa ser aplicado até dezembro."
+            )
+        with coluna_acao:
+            ativar_projecao = st.checkbox(
+                "Ativar monitor anual",
+                value=False,
+                key="app_edu_ativar_projecao",
+            )
+
+    if not ativar_projecao:
+        return
+
+    st.header(f"Monitor da meta de Educação — {exercicio}", anchor=False)
+    st.info(
+        "A MDE com impostos é estimada pela média mensal liquidada. Para o "
+        "FUNDEB, o monitor usa a previsão anual da Parte 1 quando disponível.",
+        icon="ℹ️",
+    )
+
+    modo_base = st.radio(
+        "Base constitucional anual utilizada",
+        options=("Previsão anual da API", "Valor anual informado"),
+        horizontal=True,
+        key="app_edu_monitor_modo_base",
+    )
+    if modo_base == "Previsão anual da API":
+        base_anual = parte1["base_prevista"]
+        st.caption(
+            "Base anual recomposta pela consulta 084835: "
+            f"**{formatar_brl(base_anual)}**."
+        )
+    else:
+        base_anual = Decimal(
+            str(
+                st.number_input(
+                    "Base constitucional anual estimada",
+                    min_value=0.0,
+                    value=float(parte1["base_prevista"]),
+                    step=1_000_000.0,
+                    format="%.2f",
+                    key="app_edu_monitor_base_anual",
+                )
+            )
+        )
+
+    metas = {
+        "25,00% — mínimo constitucional": Decimal("25"),
+        "25,50% — margem de segurança": Decimal("25.5"),
+        "26,64% — referência histórica recente": Decimal("26.64"),
+    }
+    rotulo_meta = st.selectbox(
+        "Meta usada no monitor",
+        options=tuple(metas),
+        key="app_edu_monitor_meta",
+    )
+    meta_percentual = metas[rotulo_meta]
+
+    aplicar_reajuste = st.checkbox(
+        "Simular reajuste sobre a MDE com impostos (exceto FUNDEB)",
+        value=False,
+        key="app_edu_monitor_aplicar_reajuste",
+        disabled=periodo >= 12,
+    )
+    percentual_reajuste = ZERO
+    mes_inicio_reajuste: int | None = None
+    if aplicar_reajuste:
+        coluna_percentual, coluna_mes = st.columns(2)
+        percentual_reajuste = Decimal(
+            str(
+                coluna_percentual.number_input(
+                    "Percentual do reajuste",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(REAJUSTE_TOTAL_2026 * Decimal("100")),
+                    step=0.01,
+                    format="%.2f",
+                    key="app_edu_monitor_percentual_reajuste",
+                    help="Percentual aplicado somente aos meses futuros alcançados.",
+                )
+            )
+        )
+        meses_futuros = tuple(range(periodo + 1, 13))
+        mes_inicio_reajuste = coluna_mes.selectbox(
+            "Mês de início do reajuste",
+            options=meses_futuros,
+            format_func=lambda mes: NOMES_MESES[mes - 1],
+            key="app_edu_monitor_mes_reajuste",
+        )
+
+    try:
+        monitor = calcular_monitor_meta(
+            parte1,
+            parte2,
+            periodo,
+            base_anual_estimada=base_anual,
+            meta_percentual=meta_percentual,
+            percentual_reajuste=percentual_reajuste,
+            mes_inicio_reajuste=mes_inicio_reajuste,
+        )
+    except ErroDadosEducacao as erro:
+        st.error(str(erro), icon="🚫")
+        return
+
+    if monitor["fundeb_estimado_por_media"]:
+        st.warning(
+            "A consulta da Parte 1 não trouxe o total anual previsto do FUNDEB. "
+            "O monitor usou automaticamente a média mensal do FUNDEB já "
+            "realizado, sem exigir valor ou percentual manual.",
+            icon="⚠️",
+        )
+
+    st.caption(
+        f"FUNDEB acumulado usado: **{formatar_brl(monitor['fundeb_atual'])}** "
+        f"({monitor['origem_fundeb']}). Total anual projetado por "
+        f"**{monitor['origem_projecao_fundeb']}**: "
+        f"**{formatar_brl(monitor['fundeb_anual_projetado'])}**. Saldo previsto "
+        f"até dezembro: **{formatar_brl(monitor['saldo_fundeb_ate_dezembro'])}**."
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric(
+        f"Meta monetária — {formatar_percentual(meta_percentual)}",
+        formatar_brl(monitor["valor_meta"]),
+        border=True,
+    )
+    col2.metric(
+        "Aplicação projetada em dezembro",
+        formatar_brl(monitor["aplicacao_projetada"]),
+        border=True,
+    )
+    col3.metric(
+        "Índice indicativo projetado",
+        formatar_percentual(monitor["indice_projetado"]),
+        border=True,
+    )
+    col4.metric(
+        "Margem projetada sobre a meta",
+        formatar_brl(monitor["margem_projetada"]),
+        border=True,
+    )
+
+    if monitor["situacao"] == "Confortável":
+        st.success(f"**Situação: confortável.** {monitor['explicacao']}", icon="✅")
+    elif monitor["situacao"] == "Atenção":
+        st.warning(f"**Situação: atenção.** {monitor['explicacao']}", icon="⚠️")
+    else:
+        st.error(f"**Situação: risco.** {monitor['explicacao']}", icon="🚨")
+
+    st.markdown("#### Formação da estimativa para dezembro")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Componente": "MDE com impostos liquidada (exceto FUNDEB)",
+                    "Cálculo": "Consulta atual",
+                    "Valor": formatar_brl(monitor["mde_impostos_atual"]),
+                },
+                {
+                    "Componente": "Transferências ao FUNDEB até o período",
+                    "Cálculo": monitor["origem_fundeb"],
+                    "Valor": formatar_brl(monitor["fundeb_atual"]),
+                },
+                {
+                    "Componente": "(-) Redutores A–D já apurados",
+                    "Cálculo": "Mantidos no valor atual",
+                    "Valor": formatar_brl(-monitor["redutores_abcd_atual"]),
+                },
+                {
+                    "Componente": "MDE/impostos futura (exceto FUNDEB)",
+                    "Cálculo": (
+                        f"{formatar_brl(monitor['media_mensal_mde'])} × "
+                        f"{monitor['meses_restantes']} meses"
+                    ),
+                    "Valor": formatar_brl(monitor["mde_futura_estimada"]),
+                },
+                {
+                    "Componente": "Saldo previsto de transferências ao FUNDEB",
+                    "Cálculo": (
+                        f"{formatar_brl(monitor['fundeb_anual_projetado'])} − "
+                        f"{formatar_brl(monitor['fundeb_atual'])}"
+                    ),
+                    "Valor": formatar_brl(monitor["saldo_fundeb_ate_dezembro"]),
+                },
+                {
+                    "Componente": "(+) Efeito adicional do reajuste",
+                    "Cálculo": (
+                        f"{formatar_brl(monitor['media_mensal_mde'])} × "
+                        f"{monitor['meses_com_reajuste']} meses × "
+                        f"{formatar_percentual(monitor['percentual_reajuste'])}"
+                    ),
+                    "Valor": formatar_brl(monitor["acrescimo_reajuste"]),
+                },
+                {
+                    "Componente": "(=) Aplicação indicativa em dezembro",
+                    "Cálculo": "Soma dos componentes projetados",
+                    "Valor": formatar_brl(monitor["aplicacao_projetada"]),
+                },
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+
+    st.code(
+        f"Base anual estimada = {formatar_brl(monitor['base_anual_estimada'])}\n"
+        f"Meta monetária = base anual × {formatar_percentual(meta_percentual)} "
+        f"= {formatar_brl(monitor['valor_meta'])}\n"
+        f"Média mensal MDE/impostos = {formatar_brl(monitor['mde_impostos_atual'])} "
+        f"÷ {periodo} = {formatar_brl(monitor['media_mensal_mde'])}\n"
+        f"Saldo FUNDEB = previsão anual da Parte 1 − realizado = "
+        f"{formatar_brl(monitor['saldo_fundeb_ate_dezembro'])}\n"
+        f"Projeção sem reajuste = {formatar_brl(monitor['projecao_sem_reajuste'])}\n"
+        f"Efeito adicional do reajuste = "
+        f"{formatar_brl(monitor['acrescimo_reajuste'])}\n"
+        f"Aplicação projetada = {formatar_brl(monitor['aplicacao_projetada'])}",
+        language=None,
+    )
+
+    st.markdown("#### Referência histórica oficial")
+    st.caption(
+        "Valores finais publicados, usados apenas como contexto. Eles não são "
+        "aplicados automaticamente na fórmula do monitor."
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Ano": item["ano"],
+                    "Índice oficial": formatar_percentual(item["indice"]),
+                    "Margem sobre 25%": formatar_percentual(
+                        item["indice"] - META_CONSTITUCIONAL
+                    ),
+                }
+                for item in HISTORICO_OFICIAL_INDICE
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+
+    with st.expander("Premissas e limitações", expanded=False):
+        st.markdown(
+            """
+- A base anual padrão é a receita prevista recomposta pela consulta atual.
+- A média mensal é o acumulado liquidado dividido pelo número do período consultado.
+- O período deve representar a quantidade de meses efetivamente acumulada pela consulta.
+- A MDE com impostos é projetada pela média mensal do próprio exercício.
+- O FUNDEB realizado da Parte 1, quando disponível, é reconciliado com a Parte 2.
+- O total anual do FUNDEB vem da Parte 1 quando disponível; na ausência, usa-se automaticamente a média mensal realizada.
+- O reajuste nunca incide sobre o FUNDEB, independentemente da origem da projeção.
+- Os redutores já apurados são mantidos constantes; novos redutores não são estimados.
+- O reajuste é uma aproximação aplicada à média total da MDE; não representa cálculo de folha.
+- O histórico oficial serve apenas como referência de margem.
+- O monitor não consulta exercícios anteriores e não cruza dados do SIGA ou SIGRH.
+"""
+        )
 def main() -> None:
     """Orquestra a página na mesma ordem em que o usuário a lê."""
 
@@ -2137,6 +2562,7 @@ def main() -> None:
     renderizar_relogios(metricas, estagio)
     renderizar_comparacao(parte1, parte2)
     renderizar_memoria(parte1, parte2, metricas, estagio)
+    renderizar_projecao(parte1, parte2, exercicio, periodo)
 
 
 if __name__ == "__main__":

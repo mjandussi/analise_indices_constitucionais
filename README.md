@@ -166,16 +166,11 @@ st.dataframe(resultado.parte2.quadro_resumo(), width="stretch")
    A–D são calculados em Python. O HTTP 500 auditado foi causado pela avaliação
    do `SE(...)` da linha B na antiga 084805; a nova consulta deve manter
    apenas `RECEITAS RECEBIDAS DO FUNDEB` e `TOTAL DAS DESPESAS CUSTEADAS...`.
-3. A linha positiva **`TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB`** também é
-   obrigatória para o resultado, mas pode ser obtida de duas formas. Se a API
-   entregar a linha pronta, o código a utiliza. Se o nó de expressão não vier
-   no JSON, publique como linha independente um insumo cujo título contenha
-   `FUNDEB` e `FILTRO`, por exemplo
-   **`INSUMO FUNDEB-FILTRO`**; o Python reproduz a expressão do Flexvision
-   calculando `0 - valor do filtro` em cada estágio. Evitar `TOTAL` no título
-   também contorna a omissão observada desse tipo de linha no JSON.
-   Sem nenhum dos dois, a aplicação ficaria subestimada e o pipeline interrompe
-   o cálculo.
+3. A **084837** deve conter a linha de nome exato
+   **`(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB-FILTRO`**, com os valores
+   contábeis negativos. O Python aplica `0 - valor do filtro` em cada estágio e
+   substitui essa linha pela versão positiva antes da soma. A posição pode
+   mudar, mas o código não procura nomes alternativos.
 
 Esse contrato foi validado ao vivo com as consultas 084835 e 084837 para
 2026/04. Erros HTTP 500/502/503/504 recebem até três tentativas curtas;

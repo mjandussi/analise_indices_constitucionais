@@ -455,11 +455,10 @@ Na 084837, a API passou a retornar 47 linhas, incluindo o nó
 `(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB-FILTRO` com valor contábil
 negativo nos cinco estágios. O Python aplica `0 - filtro` antes de somá-lo aos
 valores positivos.
-A expressão configurada no Flexvision é `0 - nó-FUNDEB-FILTRO`; portanto, uma
-alternativa compatível com a API é promover o insumo a uma linha independente
-com título sem `TOTAL`, por exemplo **`INSUMO FUNDEB-FILTRO`**.
-Nesse caso o Python inverte o sinal por estágio e sintetiza a linha positiva
-no relatório calculado.
+
+O contrato foi simplificado: o Python procura esse nome exato em qualquer
+posição, inverte o valor de cada estágio e substitui o filtro pela linha positiva
+no cálculo. Não existem caminhos alternativos para linha pronta ou outro nome.
 
 O pipeline rejeita explicitamente a Parte 2 quando essa linha não chega. Isso
 impede que um retorno parcial produza silenciosamente um total liquidado de
