@@ -5,11 +5,8 @@ from __future__ import annotations
 import math
 import re
 import unicodedata
-from collections.abc import Mapping, Sequence
-from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
-
-from .erros import ErroSchemaFlexvision
 
 
 ZERO = Decimal("0")
@@ -99,12 +96,6 @@ def quantizar_moeda(valor: Decimal) -> Decimal:
     return valor.quantize(CENTAVO, rounding=ROUND_HALF_UP)
 
 
-def quantizar_minimo_constitucional(valor: Decimal) -> Decimal:
-    """Eleva ao próximo centavo para que o valor nunca represente menos de 25%."""
-
-    return valor.quantize(CENTAVO, rounding=ROUND_CEILING)
-
-
 def formatar_brl(valor: Decimal | None) -> str:
     """Formata um ``Decimal`` como moeda brasileira para uso no dashboard."""
 
@@ -123,75 +114,6 @@ def formatar_percentual(valor: Decimal | None, casas: int = 2) -> str:
     passo = Decimal(1).scaleb(-casas)
     numero = f"{valor.quantize(passo, rounding=ROUND_HALF_UP):.{casas}f}"
     return numero.replace(".", ",") + "%"
-
-
-def extrair_registros(dados: Any) -> list[dict[str, Any]]:
-    """Extrai registros de lista, DataFrame ou envelope JSON sem adivinhar listas.
-
-    Ao contrário do conversor genérico do client, um envelope com mais de uma
-    lista é rejeitado para impedir que uma coleção errada seja escolhida.
-    """
-
-    if dados is None:
-        return []
-
-    if hasattr(dados, "to_dict") and not isinstance(dados, Mapping):
-        try:
-            registros = dados.to_dict(orient="records")
-        except TypeError:
-            registros = None
-        if registros is not None:
-            return _validar_registros(registros)
-
-    if isinstance(dados, Mapping):
-        candidatos_preferenciais = [
-            dados[chave]
-            for chave in ("dados", "data", "items", "records", "resultado", "resultados")
-            if chave in dados and isinstance(dados[chave], list)
-        ]
-        if len(candidatos_preferenciais) == 1:
-            return _validar_registros(candidatos_preferenciais[0])
-
-        listas = [valor for valor in dados.values() if isinstance(valor, list)]
-        if len(listas) == 1:
-            return _validar_registros(listas[0])
-        if len(listas) > 1:
-            raise ErroSchemaFlexvision(
-                "O JSON contém mais de uma lista de registros. Selecione explicitamente "
-                "a coleção da consulta antes de calcular as métricas."
-            )
-        return _validar_registros([dados])
-
-    if isinstance(dados, Sequence) and not isinstance(dados, (str, bytes, bytearray)):
-        return _validar_registros(dados)
-
-    raise ErroSchemaFlexvision(
-        f"Formato de resposta não suportado: {type(dados).__name__}."
-    )
-
-
-def colunas_disponiveis(registros: Sequence[Mapping[str, Any]]) -> tuple[str, ...]:
-    """Retorna a união ordenada de colunas presentes nos registros."""
-
-    vistas: set[str] = set()
-    colunas: list[str] = []
-    for registro in registros:
-        for coluna in registro:
-            if coluna not in vistas:
-                vistas.add(coluna)
-                colunas.append(coluna)
-    return tuple(colunas)
-
-
-def _validar_registros(registros: Sequence[Any]) -> list[dict[str, Any]]:
-    resultado: list[dict[str, Any]] = []
-    for indice, registro in enumerate(registros):
-        if not isinstance(registro, Mapping):
-            raise ErroSchemaFlexvision(
-                f"O item {indice} da resposta não é um objeto JSON."
-            )
-        resultado.append({str(chave): valor for chave, valor in registro.items()})
-    return resultado
 
 
 def _valor_ausente(valor: Any) -> bool:

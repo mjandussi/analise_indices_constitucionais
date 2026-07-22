@@ -5,9 +5,6 @@ from __future__ import annotations
 from decimal import Decimal
 from pathlib import Path
 
-from regras.modelos import ROTULOS_ESTAGIOS
-
-
 # Consultas Flexvision usadas pela extração.
 CONSULTA_RECEITAS = "084835"
 CONSULTA_DESPESAS = "084837"
@@ -15,7 +12,13 @@ CONSULTA_DESPESAS = "084837"
 # Parâmetros financeiros e estágios compartilhados pelas demais camadas.
 META_CONSTITUCIONAL = Decimal("25")
 REAJUSTE_TOTAL_2026 = Decimal("0.1156")
-ESTAGIOS = dict(ROTULOS_ESTAGIOS)
+ESTAGIOS = {
+    "dotacao_atual": "Dotação Atual",
+    "despesa_autorizada": "Despesa Autorizada",
+    "despesa_empenhada": "Despesa Empenhada",
+    "despesa_liquidada": "Despesa Liquidada",
+    "despesa_paga": "Despesa Paga",
+}
 ESTAGIOS_COMPARACAO = (
     "despesa_empenhada",
     "despesa_liquidada",

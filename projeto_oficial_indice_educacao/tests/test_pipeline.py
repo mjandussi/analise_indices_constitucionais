@@ -45,23 +45,38 @@ def payload_sintetico() -> dict[str, list[dict[str, object]]]:
     parte1 = [
         {
             "Descrição": "(+) Impostos",
-            "Receita Prevista": "1.000,00",
-            "Receita Arrecadada": "800,00",
+            "Receita Prevista (A)": "1.000,00",
+            "Receita Arrecadada (B)": "800,00",
+            "Diferença (B-A)": "-200,00",
+            "Arrecadada/Prevista": "80,00",
         },
         {
             "Descrição": "(-) Transferências aos Municípios",
-            "Receita Prevista": "-200,00",
-            "Receita Arrecadada": "-100,00",
+            "Receita Prevista (A)": "-200,00",
+            "Receita Arrecadada (B)": "-100,00",
+            "Diferença (B-A)": "100,00",
+            "Arrecadada/Prevista": "50,00",
         },
         {
             "Descrição": "5- TOTAL DESTINADO AO FUNDEB",
-            "Receita Prevista": "200,00",
-            "Receita Arrecadada": "50,00",
+            "Receita Prevista (A)": "200,00",
+            "Receita Arrecadada (B)": "50,00",
+            "Diferença (B-A)": "-150,00",
+            "Arrecadada/Prevista": "25,00",
         },
         {
             "Descrição": "TOTAL - BASE DE CÁLCULO",
-            "Receita Prevista": "800,00",
-            "Receita Arrecadada": "700,00",
+            "Receita Prevista (A)": "800,00",
+            "Receita Arrecadada (B)": "700,00",
+            "Diferença (B-A)": "-100,00",
+            "Arrecadada/Prevista": "87,50",
+        },
+        {
+            "Descrição": "VALOR A SER APLICADO EM EDUCAÇÃO (25% DA RECEITA)",
+            "Receita Prevista (A)": "200,00",
+            "Receita Arrecadada (B)": "175,00",
+            "Diferença (B-A)": "-25,00",
+            "Arrecadada/Prevista": "87,50",
         },
     ]
     parte2 = [

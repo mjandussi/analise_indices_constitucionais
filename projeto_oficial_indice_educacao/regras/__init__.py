@@ -1,17 +1,10 @@
-"""Núcleo financeiro portátil do índice constitucional de educação."""
+"""Regras financeiras do índice constitucional de Educação."""
 
-from .calculos import calcular_indice_educacao, calcular_parte1, calcular_parte2
+from .calculos import calcular_parte1, calcular_parte2
 from .erros import (
     ErroDadosFlexvision,
     ErroRegraNegocio,
     ErroSchemaFlexvision,
-)
-from .modelos import (
-    ESTAGIOS_DESPESA,
-    ROTULOS_ESTAGIOS,
-    ResultadoEducacao,
-    ResultadoParte1,
-    ResultadoParte2,
 )
 from .normalizacao import formatar_brl, formatar_percentual, numero_decimal
 from .projecao import (
@@ -24,20 +17,14 @@ from .projecao import (
 )
 
 __all__ = [
-    "ESTAGIOS_DESPESA",
     "HISTORICO_OFICIAL_INDICE",
     "META_CONSTITUCIONAL",
     "MESES_VALIDOS",
     "NOMES_MESES",
-    "ROTULOS_ESTAGIOS",
     "TOTAL_MESES_ANO",
     "ErroDadosFlexvision",
     "ErroRegraNegocio",
     "ErroSchemaFlexvision",
-    "ResultadoEducacao",
-    "ResultadoParte1",
-    "ResultadoParte2",
-    "calcular_indice_educacao",
     "calcular_monitor_meta",
     "calcular_parte1",
     "calcular_parte2",

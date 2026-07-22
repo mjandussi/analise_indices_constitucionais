@@ -8,44 +8,101 @@ por :func:`processar_csvs`.
 from __future__ import annotations
 
 import argparse
-import csv
 from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from config import ESTAGIOS, ESTAGIOS_COMPARACAO, META_CONSTITUCIONAL
-from regras.calculos import (
-    calcular_parte1 as _calcular_parte1,
-    calcular_parte2 as _calcular_parte2,
-)
+from regras.calculos import calcular_parte1, calcular_parte2
 from regras.erros import ErroDadosFlexvision
 from regras.normalizacao import (
     ZERO,
     formatar_brl,
     formatar_percentual,
     normalizar_texto,
+    numero_decimal,
     quantizar_moeda,
 )
 
 
-def ler_csv(caminho: str | Path) -> list[dict[str, str]]:
-    """Lê o CSV da API preservando cada célula como texto."""
+def ler_csv(caminho: str | Path) -> pd.DataFrame:
+    """Lê o CSV como uma planilha, preservando inicialmente os textos."""
 
     arquivo = Path(caminho)
     if not arquivo.is_file():
         raise FileNotFoundError(f"Arquivo CSV não encontrado: {arquivo}")
 
-    with arquivo.open(encoding="utf-8-sig", newline="") as entrada:
-        return list(csv.DictReader(entrada, delimiter=";"))
+    return pd.read_csv(
+        arquivo,
+        sep=";",
+        encoding="utf-8-sig",
+        dtype=str,
+        keep_default_na=False,
+    )
+
+
+def preparar_parte1(tabela: pd.DataFrame) -> pd.DataFrame:
+    """Dá nomes curtos às colunas da consulta 084835."""
+
+    renomear = {tabela.columns[0]: "descricao"}
+    aliases = {
+        "RECEITA PREVISTA": "prevista",
+        "RECEITA ARRECADADA": "arrecadada",
+        "DIFERENCA (B-A)": "diferenca",
+        "ARRECADADA/PREVISTA": "percentual",
+    }
+    for coluna in tabela.columns[1:]:
+        nome = normalizar_texto(coluna)
+        for trecho, destino in aliases.items():
+            if trecho in nome:
+                renomear[coluna] = destino
+                break
+
+    tabela = tabela.rename(columns=renomear)
+    colunas = ("descricao", "prevista", "arrecadada", "diferenca", "percentual")
+    _exigir_colunas(tabela, colunas, "Parte 1")
+    tabela = tabela[list(colunas)].copy()
+    tabela["descricao"] = tabela["descricao"].astype(str).str.strip()
+    tabela = tabela[tabela["descricao"] != ""].reset_index(drop=True)
+    tabela["chave"] = tabela["descricao"].map(normalizar_texto)
+    for coluna in colunas[1:]:
+        tabela[coluna] = tabela[coluna].map(numero_decimal)
+    return tabela
+
+
+def preparar_parte2(tabela: pd.DataFrame) -> pd.DataFrame:
+    """Dá nomes curtos às colunas da consulta 084837."""
+
+    renomear = {tabela.columns[0]: "descricao"}
+    nomes_estagios = {
+        normalizar_texto(rotulo): chave for chave, rotulo in ESTAGIOS.items()
+    }
+    for coluna in tabela.columns[1:]:
+        estagio = nomes_estagios.get(normalizar_texto(coluna))
+        if estagio:
+            renomear[coluna] = estagio
+
+    tabela = tabela.rename(columns=renomear)
+    colunas = ("descricao", *ESTAGIOS)
+    _exigir_colunas(tabela, colunas, "Parte 2")
+    tabela = tabela[list(colunas)].copy()
+    tabela["descricao"] = tabela["descricao"].astype(str).str.strip()
+    tabela = tabela[tabela["descricao"] != ""].reset_index(drop=True)
+    tabela["chave"] = tabela["descricao"].map(normalizar_texto)
+    for coluna in ESTAGIOS:
+        tabela[coluna] = tabela[coluna].map(numero_decimal)
+    return tabela
 
 
 def processar_csvs(pasta_dados: str | Path) -> dict[str, Any]:
     """Calcula o índice usando exclusivamente parte1.csv e parte2.csv."""
 
     pasta = Path(pasta_dados).expanduser().resolve()
-    parte1 = _parte1_para_dict(_calcular_parte1(ler_csv(pasta / "parte1.csv")))
-    parte2 = _parte2_para_dict(_calcular_parte2(ler_csv(pasta / "parte2.csv")))
+    parte1 = calcular_parte1(preparar_parte1(ler_csv(pasta / "parte1.csv")))
+    parte2 = calcular_parte2(preparar_parte2(ler_csv(pasta / "parte2.csv")))
     return {"parte1": parte1, "parte2": parte2, "pasta_dados": pasta}
 
 
@@ -128,75 +185,18 @@ def calcular_todos_os_indices(
     return comparacao
 
 
-def _parte1_para_dict(resultado: Any) -> dict[str, Any]:
-    return {
-        "componentes": [dict(item) for item in resultado.componentes],
-        "base_prevista": resultado.base_prevista,
-        "base_arrecadada": resultado.base_arrecadada,
-        "diferenca": resultado.diferenca_receita,
-        "realizacao_percentual": resultado.realizacao_percentual,
-        "minimo_previsto": resultado.minimo_sobre_prevista,
-        "minimo_arrecadado": resultado.minimo_sobre_arrecadada,
-        "fundeb_previsto": resultado.fundeb_previsto,
-        "fundeb_realizado": resultado.fundeb_realizado,
-        "avisos": list(resultado.avisos),
-    }
-
-
-def _parte2_para_dict(resultado: Any) -> dict[str, Any]:
-    if resultado.total_fundeb is None:
-        raise ErroDadosFlexvision("O total transferido ao FUNDEB não foi calculado.")
-
-    return {
-        "linhas_brutas": [
-            _linha_normalizada(indice, linha)
-            for indice, linha in enumerate(resultado.linhas_normalizadas)
-        ],
-        "linhas_positivas": [_copiar_linha(linha) for linha in resultado.linhas_positivas],
-        "total_fundeb": _copiar_linha(resultado.total_fundeb),
-        "origem_total_fundeb": resultado.origem_total_fundeb,
-        "valores_positivos": dict(resultado.valores_positivos),
-        "redutor_a": dict(resultado.redutor_a),
-        "redutor_b": dict(resultado.redutor_b),
-        "redutor_c": dict(resultado.redutor_c),
-        "redutor_d": dict(resultado.redutor_d),
-        "outras_linhas": [_copiar_linha(linha) for linha in resultado.outras_linhas],
-        "outras_deducoes": dict(resultado.outras_deducoes),
-        "total_aplicado": dict(resultado.total_aplicado),
-        "detalhes_a": [_copiar_recursivo(item) for item in resultado.detalhes_a],
-        "detalhes_b": _copiar_recursivo(resultado.detalhes_b),
-        "detalhes_c": [_copiar_recursivo(item) for item in resultado.detalhes_c],
-        "detalhes_d": [_copiar_recursivo(item) for item in resultado.detalhes_d],
-    }
-
-
-def _copiar_linha(linha: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        **{chave: valor for chave, valor in linha.items() if chave != "valores"},
-        "valores": dict(linha["valores"]),
-    }
-
-
-def _linha_normalizada(indice: int, linha: Mapping[str, Any]) -> dict[str, Any]:
-    descricao = str(linha.get("descricao", ""))
-    return {
-        "indice": indice,
-        "descricao": descricao,
-        "chave": normalizar_texto(descricao),
-        "valores": {estagio: linha[estagio] for estagio in ESTAGIOS},
-    }
-
-
-def _copiar_recursivo(valor: Any) -> Any:
-    if isinstance(valor, Mapping):
-        return {chave: _copiar_recursivo(item) for chave, item in valor.items()}
-    if isinstance(valor, (list, tuple)):
-        return [_copiar_recursivo(item) for item in valor]
-    return valor
-
-
 def _percentual(numerador: Decimal, denominador: Decimal) -> Decimal | None:
     return numerador * Decimal("100") / denominador if denominador else None
+
+
+def _exigir_colunas(
+    tabela: pd.DataFrame, colunas: tuple[str, ...], parte: str
+) -> None:
+    ausentes = [coluna for coluna in colunas if coluna not in tabela.columns]
+    if ausentes:
+        raise ErroDadosFlexvision(
+            f"Colunas ausentes na {parte}: {', '.join(ausentes)}."
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -6,11 +6,11 @@ repositório oficial `indice-constitucional-educacao`.
 O fluxo implementado é:
 
 ```text
+extracao.py (define as consultas de educação)
+        ↓
+extracao_flex.py (autentica e consulta a API)
+        ↓
 Flexvision (JSON)
-        ↓
-extracao_flex.py
-        ↓
-extracao.py
         ↓
 parte1.csv + parte2.csv
         ↓
@@ -34,6 +34,7 @@ mesmo diretório apenas como cópia do retorno original da API.
 ├── dash_projecao.py     # projeção anual para o índice
 ├── config.py            # IDs, meta, estágios e caminhos
 ├── regras/              # fórmulas financeiras isoladas
+├── docs/                # documento contábil e explicação das regras
 ├── tests/               # testes offline
 ├── .env.exemplo
 ├── .gitignore
@@ -88,6 +89,9 @@ Uma nova extração do mesmo ano e período substitui esses quatro arquivos.
 
 Os CSVs usam `;` e UTF-8 com BOM, para poderem ser abertos diretamente no
 Excel sem alterar os valores financeiros.
+
+As consultas `079651`, `079652` e `079653` são as referências oficiais-base.
+O ETL executa as cópias operacionais `084835` e `084837`, ajustadas para a API.
 
 ### Usar somente o arquivo `extracao_flex.py` em outro projeto
 
@@ -179,6 +183,22 @@ O segundo relógio é um acompanhamento do realizado diante da previsão anual.
 Ele não estima despesas dos meses futuros; essa estimativa pertence ao
 `dash_projecao.py`.
 
+## Regras de negócio
+
+O cálculo foi organizado para seguir a mesma lógica de uma planilha:
+
+1. `dados.py` abre os CSVs com pandas e dá nomes curtos às colunas;
+2. a Parte 1 fornece diretamente a base e o mínimo de 25%;
+3. `regras/calculos.py` transforma a Parte 2 adaptada numa tabela equivalente
+   à consulta original no leiaute lógico e nas fórmulas;
+4. o total é a soma das linhas `(+)` menos a soma das linhas `(-)`;
+5. o índice é a despesa aplicada dividida pela base arrecadada.
+
+Leia a explicação completa em
+[`docs/regras_negocio.md`](docs/regras_negocio.md) e confira o documento de
+origem em
+[`docs/Ajustes da Consulta do Indice Constitucional de Educação - com fórmula FUNDEB.docx`](docs/Ajustes%20da%20Consulta%20do%20Indice%20Constitucional%20de%20Educação%20-%20com%20fórmula%20FUNDEB.docx).
+
 ## Testes
 
 Os testes não precisam de credenciais nem fazem chamadas externas:
@@ -193,7 +213,10 @@ Eles verificam que:
 - o extrator funciona sem pacotes externos;
 - o JSON é convertido para os dois CSVs;
 - a ETL continua funcionando quando as cópias JSON são inutilizadas;
-- FUNDEB e redutores A–D entram no cálculo;
+- FUNDEB e redutores A–D são comprovados com valores diferentes de zero;
+- a Parte 2 calculada reproduz o leiaute lógico, soma as linhas positivas e
+  subtrai as negativas sem duplicá-las;
+- a amostra real de abril de 2026 continua produzindo os valores conferidos;
 - a projeção mantém precisão com `Decimal`;
 - a pasta copiada não importa código do repositório de origem.
 
@@ -203,7 +226,8 @@ Eles verificam que:
 - Mudou o fluxo específico das duas consultas de educação: `extracao.py`.
 - Mudou ID, caminho ou constante: `config.py`.
 - Mudou o formato do CSV entregue à análise: `dados.py`.
-- Mudou uma fórmula financeira: arquivo correspondente em `regras/` e teste.
+- Mudou uma fórmula financeira: `regras/calculos.py`,
+  `docs/regras_negocio.md` e `tests/test_regras.py`.
 - Mudou somente a tela: um dos dois arquivos `dash_*.py`.
 
 Essa separação mantém a integração, as regras e a apresentação independentes,

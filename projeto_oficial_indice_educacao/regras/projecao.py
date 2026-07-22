@@ -11,11 +11,11 @@ from collections.abc import Mapping
 from decimal import Decimal, ROUND_CEILING
 from typing import Any
 
+from config import META_CONSTITUCIONAL
 from .erros import ErroRegraNegocio
 from .normalizacao import CENTAVO, ZERO, quantizar_moeda
 
 
-META_CONSTITUCIONAL = Decimal("25")
 TOTAL_MESES_ANO = 12
 MESES_VALIDOS = range(1, TOTAL_MESES_ANO + 1)
 
