@@ -169,6 +169,16 @@ O dashboard de projeção usa os CSVs já existentes e não chama novamente a
 API. O dashboard do índice só chama a API quando o botão de atualização é
 pressionado.
 
+No `dash_indice.py`, os dois relógios têm bases diferentes:
+
+- **Índice do período:** aplicação do estágio selecionado ÷ receita arrecadada.
+- **Índice sobre a previsão anual:** despesa liquidada acumulada ÷ receita anual
+  prevista.
+
+O segundo relógio é um acompanhamento do realizado diante da previsão anual.
+Ele não estima despesas dos meses futuros; essa estimativa pertence ao
+`dash_projecao.py`.
+
 ## Testes
 
 Os testes não precisam de credenciais nem fazem chamadas externas:

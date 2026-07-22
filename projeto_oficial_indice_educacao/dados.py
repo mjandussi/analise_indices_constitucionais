@@ -81,6 +81,14 @@ def calcular_metricas(
     indice = _percentual(aplicado, base)
     saldo = quantizar_moeda(aplicado - minimo)
 
+    # Acompanhamento anual: usa somente valores já realizados. Não projeta
+    # despesas futuras; compara a liquidação acumulada com a receita prevista.
+    liquidado = parte2["total_aplicado"]["despesa_liquidada"]
+    base_prevista = parte1["base_prevista"]
+    minimo_anual = parte1["minimo_previsto"]
+    indice_anual = _percentual(liquidado, base_prevista)
+    execucao_meta_anual = _percentual(liquidado, minimo_anual)
+
     return {
         "estagio": estagio,
         "aplicado": aplicado,
@@ -92,6 +100,11 @@ def calcular_metricas(
         "deficit_periodo": max(-saldo, ZERO),
         "excedente_periodo": max(saldo, ZERO),
         "atingiu_minimo": indice is not None and indice >= META_CONSTITUCIONAL,
+        "liquidado": liquidado,
+        "base_prevista": base_prevista,
+        "minimo_anual": minimo_anual,
+        "indice_anual": indice_anual,
+        "execucao_meta_anual": execucao_meta_anual,
     }
 
 

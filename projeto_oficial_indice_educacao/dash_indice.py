@@ -5,10 +5,12 @@ Execute com: ``streamlit run dash_indice.py``.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from config import ESTAGIOS, META_CONSTITUCIONAL
@@ -64,18 +66,137 @@ def exibir_resumo(metricas: dict[str, Any]) -> None:
         st.warning("O índice apurado ainda está abaixo do mínimo constitucional de 25%.")
 
 
+def _criar_relogio(
+    indice: Any,
+    titulo: str,
+    subtitulo: str,
+    *,
+    neutro: bool = False,
+) -> go.Figure:
+    """Cria um relógio com a referência fixa de 25%."""
+
+    valor = max(0.0, float(indice))
+    meta = float(META_CONSTITUCIONAL)
+    limite = max(30.0, math.ceil(max(valor, meta) * 1.15 / 5) * 5)
+    atingiu = indice >= META_CONSTITUCIONAL
+    cor = "#15803d" if atingiu else ("#0f766e" if neutro else "#dc2626")
+    cor_abaixo = "#e0f2fe" if neutro else "#fee2e2"
+
+    figura = go.Figure(
+        go.Indicator(
+            mode="gauge+number" if neutro else "gauge+number+delta",
+            value=valor,
+            number={"suffix": "%", "valueformat": ".2f"},
+            delta=None
+            if neutro
+            else {"reference": meta, "suffix": " p.p.", "valueformat": ".2f"},
+            title={"text": f"<b>{titulo}</b><br><span>{subtitulo}</span>"},
+            gauge={
+                "axis": {"range": [0, limite], "ticksuffix": "%"},
+                "bar": {"color": cor},
+                "steps": [
+                    {"range": [0, meta], "color": cor_abaixo},
+                    {"range": [meta, limite], "color": "#dcfce7"},
+                ],
+                "threshold": {
+                    "line": {"color": "#172033", "width": 4},
+                    "value": meta,
+                },
+            },
+        )
+    )
+    figura.update_layout(
+        height=330,
+        margin={"t": 60, "b": 25, "l": 30, "r": 30},
+        separators=",.",
+    )
+    return figura
+
+
+def exibir_relogios(metricas: dict[str, Any], estagio: str) -> None:
+    """Compara o índice do período com o acompanhamento da previsão anual."""
+
+    st.subheader("Índice do período e acompanhamento anual")
+    st.caption(
+        "O primeiro relógio usa a receita arrecadada. O segundo usa a receita "
+        "anual prevista e a despesa liquidada acumulada; ele não projeta despesas futuras."
+    )
+    coluna_periodo, coluna_anual = st.columns(2)
+
+    with coluna_periodo:
+        if metricas["indice_periodo"] is None:
+            st.info("A receita arrecadada é zero; o índice não pode ser calculado.")
+        else:
+            figura = _criar_relogio(
+                metricas["indice_periodo"],
+                "Índice do período",
+                f"{ESTAGIOS[estagio]} ÷ receita arrecadada",
+            )
+            st.plotly_chart(figura, width="stretch", config={"displayModeBar": False})
+            st.caption(
+                f"Aplicação: **{formatar_brl(metricas['aplicado'])}** sobre a "
+                f"receita arrecadada."
+            )
+
+    with coluna_anual:
+        if metricas["indice_anual"] is None:
+            st.info("A receita prevista é zero; o índice anual não pode ser calculado.")
+        else:
+            figura = _criar_relogio(
+                metricas["indice_anual"],
+                "Índice sobre a previsão anual",
+                "Despesa liquidada acumulada ÷ receita prevista",
+                neutro=True,
+            )
+            st.plotly_chart(figura, width="stretch", config={"displayModeBar": False})
+            st.caption(
+                f"Liquidação acumulada: **{formatar_brl(metricas['liquidado'])}**. "
+                f"Execução da meta anual de 25%: "
+                f"**{formatar_percentual(metricas['execucao_meta_anual'])}**."
+            )
+
+
 def exibir_comparacao(parte1: dict[str, Any], parte2: dict[str, Any]) -> None:
     """Compara os três estágios usados no acompanhamento."""
 
     linhas = calcular_todos_os_indices(parte1, parte2)
-    grafico = pd.DataFrame(
-        {
-            "Estágio": [linha["Estágio"] for linha in linhas],
-            "Índice (%)": [float(linha["Índice (%)"] or 0) for linha in linhas],
-        }
-    ).set_index("Estágio")
     st.subheader("Comparação por estágio")
-    st.bar_chart(grafico, horizontal=True)
+    if any(linha["Índice (%)"] is not None for linha in linhas):
+        valores = [float(linha["Índice (%)"] or 0) for linha in linhas]
+        limite = max(30.0, math.ceil(max(valores + [25.0]) * 1.15 / 5) * 5)
+        cores = [
+            "#15803d" if linha["Atingiu 25%"] else "#dc2626" for linha in linhas
+        ]
+        figura = go.Figure(
+            go.Bar(
+                x=[linha["Estágio"] for linha in linhas],
+                y=valores,
+                marker_color=cores,
+                text=[formatar_percentual(linha["Índice (%)"]) for linha in linhas],
+                textposition="outside",
+                customdata=[formatar_brl(linha["Aplicação"]) for linha in linhas],
+                hovertemplate=(
+                    "<b>%{x}</b><br>Índice: %{text}<br>Aplicação: %{customdata}"
+                    "<extra></extra>"
+                ),
+            )
+        )
+        figura.add_hline(
+            y=float(META_CONSTITUCIONAL),
+            line_dash="dash",
+            line_color="#172033",
+            annotation_text="Mínimo de 25%",
+        )
+        figura.update_layout(
+            height=380,
+            margin={"t": 45, "b": 30, "l": 30, "r": 30},
+            yaxis={"title": "Índice (%)", "range": [0, limite]},
+            showlegend=False,
+        )
+        st.plotly_chart(figura, width="stretch", config={"displayModeBar": False})
+    else:
+        st.info("A receita arrecadada é zero; não há índices para comparar.")
+
     st.dataframe(
         pd.DataFrame(
             [
@@ -164,6 +285,7 @@ def main() -> None:
     parte1, parte2 = resultado["parte1"], resultado["parte2"]
     metricas = calcular_metricas(parte1, parte2, estagio)
     exibir_resumo(metricas)
+    exibir_relogios(metricas, estagio)
     exibir_comparacao(parte1, parte2)
     exibir_memoria(parte1, parte2, estagio)
 

@@ -128,6 +128,10 @@ class TestFluxoCsv(unittest.TestCase):
             self.assertEqual(resultado["parte1"]["base_arrecadada"], Decimal("700.00"))
             self.assertEqual(resultado["parte2"]["total_fundeb"]["valores"]["despesa_liquidada"], Decimal("50.00"))
             self.assertEqual(metricas["aplicado"], Decimal("1000.00"))
+            self.assertEqual(metricas["base_prevista"], Decimal("800.00"))
+            self.assertEqual(metricas["liquidado"], Decimal("1000.00"))
+            self.assertEqual(metricas["indice_anual"], Decimal("125.00"))
+            self.assertEqual(metricas["execucao_meta_anual"], Decimal("500.00"))
             self.assertEqual(
                 localizar_dados_educacao(2026, 4, pasta_saida=raiz_dados),
                 pasta,
