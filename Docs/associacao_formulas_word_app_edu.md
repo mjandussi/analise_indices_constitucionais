@@ -1,9 +1,11 @@
-# Associação das fórmulas do Word com o `app_edu.py`
+# Associação das fórmulas do Word com a implementação modular
 
 ## Objetivo
 
 Este documento associa as regras descritas em **Ajustes da Consulta do Índice
-Constitucional de Educação** à implementação Python de [`app_edu.py`](../app_edu.py).
+Constitucional de Educação** à implementação canônica de
+[`educacao.py`](../src/indices_constitucionais/educacao.py). O `app_edu.py`
+permanece apenas como ponto de entrada dos dashboards.
 
 Documentos de referência:
 
@@ -24,7 +26,7 @@ linhas por sua descrição normalizada e recompõe os resultados.
 6. O total aplicado em educação é calculado pela subtração de todos os redutores.
 
 O encadeamento principal está em
-[`calcular_parte2()`](../app_edu.py#L1077).
+[`calcular_parte2()`](../src/indices_constitucionais/educacao.py).
 
 ## Total das receitas transferidas ao FUNDEB
 
@@ -55,17 +57,16 @@ aplicações.
 ### Implementação Python
 
 A lógica está em
-[`resolver_total_transferido_fundeb()`](../app_edu.py#L802). O contrato agora é
-único e direto:
+[`_calcular_total_fundeb_do_filtro()`](../src/indices_constitucionais/educacao.py):
 
 1. procura na consulta 084837 a linha cujo nome é exatamente
    `(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB-FILTRO`;
 2. calcula `0 - valor` em cada estágio;
-3. substitui essa linha, na posição em que estiver, pelo total positivo
+3. inclui no cálculo uma única linha positiva
    `(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB`.
 
-Não há mais busca por nomes alternativos, aceitação de uma linha positiva
-direta, comparação entre duas versões ou escolha entre diferentes caminhos.
+O pipeline também aceita a linha positiva direta. Quando as duas formas vêm na
+consulta, elas precisam reconciliar centavo a centavo.
 
 ## Redutor A — superávit anterior não aplicado
 
@@ -90,8 +91,8 @@ superávit e a aplicação.
 ### Implementação Python
 
 A classificação dos dois grupos está em
-[`grupo_superavit()`](../app_edu.py#L827). O cálculo está em
-[`calcular_redutor_a()`](../app_edu.py#L837), especialmente:
+[`_grupo_superavit()`](../src/indices_constitucionais/educacao.py). O cálculo está em
+[`_calcular_redutor_a()`](../src/indices_constitucionais/educacao.py), especialmente:
 
 - identifica as quatro linhas de entrada;
 - exige exatamente um superávit e uma aplicação por grupo;
@@ -120,7 +121,7 @@ FUNDEB` identificada como insumo do redutor B.
 ### Implementação Python
 
 A regra está em
-[`calcular_redutor_b()`](../app_edu.py#L899):
+[`_calcular_redutor_b()`](../src/indices_constitucionais/educacao.py):
 
 - localiza a receita recebida e a despesa custeada;
 - calcula B1 e o limite B2 para a memória de cálculo;
@@ -143,7 +144,7 @@ daquele ano é zero.
 ### Implementação Python
 
 A regra está em
-[`calcular_redutor_c()`](../app_edu.py#L977):
+[`_calcular_redutor_c()`](../src/indices_constitucionais/educacao.py):
 
 - separa por ano os RPs cancelados e os excessos aplicados,
   excluindo as linhas do TAC;
@@ -163,7 +164,7 @@ TAC significa Termo de Ajustamento de Conduta.
 ### Implementação Python
 
 A regra está em
-[`calcular_redutor_d()`](../app_edu.py#L1032):
+[`_calcular_redutor_d()`](../src/indices_constitucionais/educacao.py):
 
 - seleciona somente linhas `RP CANCELADO TAC` que possuam ano;
 - exige os insumos e realiza o somatório;
@@ -181,11 +182,11 @@ Redutor de RPs cancelados = C + D
 Na fórmula financeira principal, a implementação subtrai `C` e `D`
 separadamente, o que é matematicamente equivalente a subtrair `C + D`. Essa
 decisão está documentada em
-[`calcular_parte2()`](../app_edu.py#L1077).
+[`calcular_parte2()`](../src/indices_constitucionais/educacao.py).
 
 Para reproduzir a apresentação do relatório antigo, o aplicativo também cria
 uma linha visual consolidada `C + D` em
-[`relatorio_calculado()`](../app_edu.py#L1403). As linhas individuais C e
+[`relatorio_calculado()`](../app_educacao/apresentacao.py). As linhas individuais C e
 D mostradas abaixo dela são apenas memória informativa e não são somadas outra
 vez.
 
@@ -193,7 +194,7 @@ vez.
 
 Como A, B, C e D são recompostos em Python, as antigas linhas consolidadas da
 consulta não podem entrar novamente como deduções. A função
-[`eh_linha_abcd_consolidada()`](../app_edu.py#L1057) reconhece esses
+[`_eh_agregado_abcd()`](../src/indices_constitucionais/educacao.py) reconhece esses
 agregados, e `calcular_parte2()` os exclui das outras deduções.
 
 Para o FUNDEB-FILTRO, a linha negativa é substituída pela versão positiva
@@ -214,24 +215,24 @@ Total aplicado = valores positivos
 ```
 
 O cálculo numérico está em
-[`calcular_parte2()`](../app_edu.py#L1077). A mesma composição é exibida ao
-usuário por [`quadro_formacao_aplicacao()`](../app_edu.py#L1389) e
-[`formula_monetaria()`](../app_edu.py#L1520).
+[`calcular_parte2()`](../src/indices_constitucionais/educacao.py). A mesma composição é exibida ao
+usuário por [`quadro_formacao_aplicacao()`](../app_educacao/apresentacao.py) e
+[`formula_monetaria()`](../app_educacao/apresentacao.py).
 
 ## Resumo da correspondência
 
 | Regra do Word | Fórmula executada em Python | Função principal |
 |---|---|---|
-| Total positivo do FUNDEB | `0 - FUNDEB-FILTRO` | `resolver_total_transferido_fundeb()` |
-| Redutor A | `Σ max(superávit - aplicação, 0)` | `calcular_redutor_a()` |
-| Redutor B | `max(receita - despesa - receita × 10%, 0)` | `calcular_redutor_b()` |
-| Redutor C | `Σ por ano max(RP cancelado - excesso aplicado, 0)` | `calcular_redutor_c()` |
-| Redutor D | `Σ RP cancelado TAC por ano` | `calcular_redutor_d()` |
+| Total positivo do FUNDEB | `0 - FUNDEB-FILTRO` | `_calcular_total_fundeb_do_filtro()` |
+| Redutor A | `Σ max(superávit - aplicação, 0)` | `_calcular_redutor_a()` |
+| Redutor B | `max(receita - despesa - receita × 10%, 0)` | `_calcular_redutor_b()` |
+| Redutor C | `Σ por ano max(RP cancelado - excesso aplicado, 0)` | `_calcular_redutor_c()` |
+| Redutor D | `Σ RP cancelado TAC por ano` | `_calcular_redutor_d()` |
 | C + D | ambos são redutores e são subtraídos | `calcular_parte2()` |
 | Total aplicado | positivos `- A - B - C - D - outras deduções` | `calcular_parte2()` |
 
 ## Contrato operacional
 
-A consulta 084837 deve conter a linha de nome exato
-`(+) TOTAL DAS RECEITAS TRANSFERIDAS AO FUNDEB-FILTRO`. A posição pode mudar;
-somente uma alteração no nome exigirá ajuste no Python.
+A consulta 084837 deve conter a linha positiva do total transferido ao FUNDEB
+ou a linha técnica `FUNDEB-FILTRO`. A posição pode mudar; a identificação é
+feita pelo texto normalizado e duplicidades são rejeitadas.

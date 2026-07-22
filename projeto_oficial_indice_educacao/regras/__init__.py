@@ -1,12 +1,7 @@
-"""Cálculos de índices constitucionais a partir de consultas Flexvision."""
+"""Núcleo financeiro portátil do índice constitucional de educação."""
 
-from .educacao import (
-    calcular_indice_educacao,
-    calcular_parte1,
-    calcular_parte2,
-)
+from .calculos import calcular_indice_educacao, calcular_parte1, calcular_parte2
 from .erros import (
-    ErroConsultaFlexvision,
     ErroDadosFlexvision,
     ErroRegraNegocio,
     ErroSchemaFlexvision,
@@ -19,13 +14,23 @@ from .modelos import (
     ResultadoParte2,
 )
 from .normalizacao import formatar_brl, formatar_percentual, numero_decimal
-from .flexvision import consultar_dados_educacao, consultar_e_calcular_educacao
-from .projecao import calcular_monitor_meta
+from .projecao import (
+    HISTORICO_OFICIAL_INDICE,
+    META_CONSTITUCIONAL,
+    MESES_VALIDOS,
+    NOMES_MESES,
+    TOTAL_MESES_ANO,
+    calcular_monitor_meta,
+)
 
 __all__ = [
     "ESTAGIOS_DESPESA",
+    "HISTORICO_OFICIAL_INDICE",
+    "META_CONSTITUCIONAL",
+    "MESES_VALIDOS",
+    "NOMES_MESES",
     "ROTULOS_ESTAGIOS",
-    "ErroConsultaFlexvision",
+    "TOTAL_MESES_ANO",
     "ErroDadosFlexvision",
     "ErroRegraNegocio",
     "ErroSchemaFlexvision",
@@ -36,8 +41,6 @@ __all__ = [
     "calcular_monitor_meta",
     "calcular_parte1",
     "calcular_parte2",
-    "consultar_dados_educacao",
-    "consultar_e_calcular_educacao",
     "formatar_brl",
     "formatar_percentual",
     "numero_decimal",

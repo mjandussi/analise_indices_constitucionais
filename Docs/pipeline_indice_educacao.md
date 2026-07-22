@@ -25,6 +25,23 @@ SiafeAPI / Flexvision
                                                      └─> gráficos Streamlit
 ```
 
+Na aplicação modular, as mesmas duas respostas passam por uma interface de
+arquivos antes do cálculo:
+
+```text
+app_educacao/extracao.py
+  ├── 084835 (JSON) ──> parte1.csv ──┐
+  └── 084837 (JSON) ──> parte2.csv ──┤
+                                      └─> app_educacao/dados.py
+                                            ├─> dash_indice.py
+                                            └─> dash_projecao.py
+```
+
+Os CSVs são lidos integralmente como texto e só depois normalizados para
+`Decimal`. O par é publicado de forma atômica em uma pasta de snapshot, com
+exercício, período, IDs das consultas e horário registrados em
+`metadados.json`.
+
 As respostas aceitas podem ser uma lista de objetos, um `DataFrame` ou um
 envelope JSON com uma única coleção de registros. Se um envelope contiver
 mais de uma lista, a coleção correta deve ser selecionada explicitamente antes

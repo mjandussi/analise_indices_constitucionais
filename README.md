@@ -3,9 +3,10 @@
 Biblioteca de transformação das consultas Flexvision em métricas prontas para
 um dashboard Streamlit sobre a aplicação mínima de 25% em educação.
 
-O projeto mantém a extração, a normalização e as regras de negócio fora da
-interface. Assim, o Streamlit apenas escolhe exercício/período, chama o
-pipeline e apresenta os objetos de resultado.
+O projeto mantém a extração, a ETL e as regras de negócio fora da interface.
+As duas respostas JSON do Flexvision são publicadas como `parte1.csv` e
+`parte2.csv`; os cálculos consomem esses CSVs e os dashboards apenas apresentam
+os resultados.
 
 ## O que o pipeline calcula
 
@@ -39,20 +40,50 @@ SIAFE_SENHA=sua_senha
 
 ## Executar o dashboard
 
-### Versão didática, somente API
+### Aplicação modular
 
-O arquivo `app_edu.py` reúne em um único ponto de entrada a consulta, a
-normalização, os cálculos A–D, as métricas e a apresentação. Ele não possui
-seletor de fonte nem fallback para CSV:
+O arquivo `app_edu.py` agora é somente um launcher compatível. O código está em
+`app_educacao/`, separado pelo fluxo real:
+
+```text
+Flexvision (JSON) → extracao.py → parte1.csv + parte2.csv
+                                  ↓
+                               dados.py
+                                  ↓
+                    dash_indice.py / dash_projecao.py
+```
+
+Para manter a página histórica com índice e projeção juntos:
 
 ```powershell
 python -m streamlit run app_edu.py
 ```
 
-O código está dividido em oito seções numeradas para leitura sequencial. Na
-própria tela, a aba **Memória de cálculo para apresentação à equipe** mostra a
-fórmula preenchida com os valores, a abertura de A–D, os componentes da receita
-e a rastreabilidade das consultas 084835 e 084837.
+Para executar os dois dashboards separadamente:
+
+```powershell
+python -m streamlit run app_educacao/dash_indice.py
+python -m streamlit run app_educacao/dash_projecao.py
+```
+
+O dashboard do índice pode consultar a API pelo botão. A extração grava um
+snapshot completo em `dados_extraidos/ANO/PERÍODO/`, e a ETL passa a consumir
+exclusivamente os dois CSVs desse snapshot. Trocar filtros reutiliza o arquivo
+local e não chama novamente a API.
+
+Também é possível executar cada etapa pelo terminal:
+
+```powershell
+# 1. Consultar o Flexvision e gerar os CSVs
+python -m app_educacao.extracao 2026 4
+
+# 2. Conferir a ETL de um snapshot específico
+python -m app_educacao.dados dados_extraidos/2026/04/extracao_AAAA...
+```
+
+Os JSONs e um `metadados.json` também são mantidos no snapshot para auditoria,
+mas não alimentam a ETL. Os CSVs usam `;` e UTF-8 com BOM, e as células são
+lidas como texto antes da conversão monetária para `Decimal`.
 
 ### Versão completa com referência offline
 

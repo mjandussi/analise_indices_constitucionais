@@ -131,6 +131,7 @@ celerybeat.pid
 .env
 .venv
 outputs/
+dados_extraidos/
 env/
 venv/
 ENV/

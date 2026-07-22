@@ -8,10 +8,13 @@ version = "0.1.0"
 description = "Transformação das consultas Flexvision em métricas de índices constitucionais."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "python-dotenv>=1,<2",
+]
 
 [project.optional-dependencies]
 dashboard = [
+    "altair>=5,<7",
     "pandas>=2,<4",
     "plotly>=6.3,<7",
     "streamlit>=1.59,<2",
